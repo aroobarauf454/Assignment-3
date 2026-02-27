@@ -61,6 +61,10 @@ A full-stack authentication application built with SvelteKit (Svelte 5), Auth.js
    ```sh
    npx drizzle-kit push
    ```
+   Alternatively, you can apply the raw SQL schema directly:
+   ```sh
+   psql -U postgres -d sveltekit_auth -f schema.sql
+   ```
 
 6. **Start the development server**
    ```sh
@@ -106,6 +110,25 @@ src/
 ├── app.css                       # TailwindCSS + custom animations
 ├── app.d.ts                      # TypeScript declarations
 └── app.html                      # HTML template
+
+schema.sql                        # Raw SQL schema for assignment submission
+drizzle.config.ts                 # Drizzle ORM configuration
+```
+
+## Database Schema
+
+The database schema is defined in `src/lib/server/db/schema.ts` using Drizzle ORM and consists of 4 tables:
+
+| Table | Purpose |
+|---|---|
+| `users` | User accounts (id, name, email, hashed password, email verification status) |
+| `accounts` | OAuth provider links (Google, GitHub) tied to users |
+| `sessions` | Active session tokens with expiry |
+| `verification_tokens` | Tokens for email verification and password reset |
+
+A raw SQL version is available in `schema.sql` at the project root. The schema is applied to PostgreSQL using:
+```sh
+npx drizzle-kit push
 ```
 
 ## Available Scripts
