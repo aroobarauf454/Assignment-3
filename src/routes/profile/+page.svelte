@@ -2,7 +2,8 @@
 	import { enhance } from '$app/forms';
 
 	let { data, form } = $props();
-	let loading = $state(false);
+	let profileLoading = $state(false);
+	let passwordLoading = $state(false);
 </script>
 
 <div class="mx-auto max-w-2xl px-4 py-8 sm:px-6 lg:px-8">
@@ -41,10 +42,11 @@
 
 		<form
 			method="POST"
+			action="?/updateProfile"
 			use:enhance={() => {
-				loading = true;
+				profileLoading = true;
 				return async ({ update }) => {
-					loading = false;
+					profileLoading = false;
 					await update();
 				};
 			}}
@@ -74,10 +76,79 @@
 			</div>
 			<button
 				type="submit"
-				disabled={loading}
+				disabled={profileLoading}
 				class="rounded-lg bg-indigo-600 px-6 py-2.5 font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-50"
 			>
-				{loading ? 'Saving...' : 'Save Changes'}
+				{profileLoading ? 'Saving...' : 'Save Changes'}
+			</button>
+		</form>
+	</div>
+
+	<div class="mt-8 rounded-xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
+		<h2 class="mb-5 text-xl font-semibold text-gray-900">Change Password</h2>
+
+		{#if form?.passwordSuccess}
+			<div class="mb-6 rounded-lg bg-green-50 p-4 text-sm text-green-600">
+				Password changed successfully!
+			</div>
+		{/if}
+
+		{#if form?.passwordError}
+			<div class="mb-6 rounded-lg bg-red-50 p-4 text-sm text-red-600">
+				{form.passwordError}
+			</div>
+		{/if}
+
+		<form
+			method="POST"
+			action="?/changePassword"
+			use:enhance={() => {
+				passwordLoading = true;
+				return async ({ update }) => {
+					passwordLoading = false;
+					await update();
+				};
+			}}
+			class="space-y-5"
+		>
+			<div>
+				<label for="currentPassword" class="mb-1 block text-sm font-medium text-gray-700">Current Password</label>
+				<input
+					id="currentPassword"
+					name="currentPassword"
+					type="password"
+					required
+					class="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-gray-900 transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none"
+				/>
+			</div>
+			<div>
+				<label for="newPassword" class="mb-1 block text-sm font-medium text-gray-700">New Password</label>
+				<input
+					id="newPassword"
+					name="newPassword"
+					type="password"
+					required
+					minlength={8}
+					class="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-gray-900 transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none"
+				/>
+			</div>
+			<div>
+				<label for="confirmPassword" class="mb-1 block text-sm font-medium text-gray-700">Confirm New Password</label>
+				<input
+					id="confirmPassword"
+					name="confirmPassword"
+					type="password"
+					required
+					minlength={8}
+					class="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-gray-900 transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none"
+				/>
+			</div>
+			<button
+				type="submit"
+				disabled={passwordLoading}
+				class="rounded-lg bg-indigo-600 px-6 py-2.5 font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-50"
+			>
+				{passwordLoading ? 'Changing...' : 'Change Password'}
 			</button>
 		</form>
 	</div>
