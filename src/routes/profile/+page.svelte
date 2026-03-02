@@ -65,12 +65,12 @@
 				<label for="email" class="mb-1 block text-sm font-medium text-gray-700">Email</label>
 				<input
 					id="email"
+					name="email"
 					type="email"
-					disabled
+					required
 					value={data.user.email}
-					class="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-gray-500"
+					class="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-gray-900 transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none"
 				/>
-				<p class="mt-1 text-xs text-gray-400">Email cannot be changed</p>
 			</div>
 			<button
 				type="submit"
