@@ -1,6 +1,6 @@
 # SvelteKit Auth App (AuthKit)
 
-A full-stack authentication application built with SvelteKit (Svelte 5), Auth.js, TailwindCSS, PostgreSQL, and Drizzle ORM.
+A full-stack authentication application built with SvelteKit (Svelte 5), Auth.js, TailwindCSS, PostgreSQL, Drizzle ORM, and an AI Chat interface powered by Google Gemini.
 
 ## Features
 
@@ -11,94 +11,108 @@ A full-stack authentication application built with SvelteKit (Svelte 5), Auth.js
 - Protected routes with auth guards
 - User profile management
 - Dashboard with app statistics
-- Animated landing page with branded AuthKit logo
+- Admin dashboard with user management, analytics, and controls
+- AI Chat interface (Vercel AI SDK + Gemini) with streaming responses
+- Tree-structured chat history — fork conversations from any message with branch navigation
+- Chat history stored per user in PostgreSQL
 - Responsive UI with TailwindCSS
 - Database sessions with Drizzle ORM + PostgreSQL
 
 ## Tech Stack
 
-- **Frontend**: SvelteKit (Svelte 5), TailwindCSS v4
-- **Authentication**: Auth.js (@auth/sveltekit)
-- **Database**: PostgreSQL 18
-- **ORM**: Drizzle ORM
-- **Language**: TypeScript
+| Component | Technology |
+|---|---|
+| Frontend Framework | SvelteKit with Svelte 5 |
+| Authentication | Auth.js (@auth/sveltekit) |
+| Styling | TailwindCSS v4 |
+| Database | PostgreSQL 16 (Docker) |
+| ORM | Drizzle ORM |
+| AI | Vercel AI SDK + Google Gemini |
+| Language | TypeScript |
 
 ## Prerequisites
 
 - Node.js v18+
-- PostgreSQL 18
-- npm or pnpm
+- [Docker](https://www.docker.com/products/docker-desktop/) (for PostgreSQL)
+- pnpm (`npm install -g pnpm`)
 
-## Setup
+## Quick Start (Fresh-Clone Setup)
 
-1. **Clone the repository**
-   ```sh
-   git clone <repo-url>
-   cd sveltekit-auth-app
-   ```
+```sh
+# 1. Clone the repository
+git clone <repo-url>
+cd sveltekit-auth-app
 
-2. **Install dependencies**
-   ```sh
-   npm install
-   ```
+# 2. Copy environment variables and fill in your secrets
+cp .env.example .env
 
-3. **Create the database**
-   ```sh
-   psql -U postgres -c "CREATE DATABASE sveltekit_auth"
-   ```
+# 3. Start PostgreSQL via Docker
+pnpm db:start
 
-4. **Configure environment variables**
-   ```sh
-   cp .env.example .env
-   ```
-   Edit `.env` and fill in:
-   - `DATABASE_URL` - your PostgreSQL connection string
-   - `AUTH_SECRET` - generate with `openssl rand -hex 32`
-   - `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` - from [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
-   - `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET` - from [GitHub Developer Settings](https://github.com/settings/developers)
+# 4. Install dependencies
+pnpm install
 
-5. **Push database schema**
-   ```sh
-   npx drizzle-kit push
-   ```
-   Alternatively, you can apply the raw SQL schema directly:
-   ```sh
-   psql -U postgres -d sveltekit_auth -f schema.sql
-   ```
+# 5. Push database schema to PostgreSQL
+pnpm db:push
 
-6. **Start the development server**
-   ```sh
-   npm run dev
-   ```
+# 6. Start the development server
+pnpm dev
+```
 
-   The app will be available at `http://localhost:5173`.
+The app will be available at `http://localhost:5173`.
 
-7. ** also suse drizzlestudio**
-    npm i drizzle-orm
-    npm i -D drizzle-kit
-    npx drizzle-kit studio
+## Environment Variables
 
-       
+Copy `.env.example` to `.env` and fill in the required values:
+
+| Variable | Description |
+|---|---|
+| `DATABASE_URL` | PostgreSQL connection string (default: `postgresql://postgres:1234@localhost:5432/sveltekit_auth`) |
+| `AUTH_SECRET` | Generate with `openssl rand -hex 32` |
+| `AUTH_TRUST_HOST` | Set to `true` for local development |
+| `AUTH_GOOGLE_ID` | From [Google Cloud Console](https://console.cloud.google.com/apis/credentials) |
+| `AUTH_GOOGLE_SECRET` | From [Google Cloud Console](https://console.cloud.google.com/apis/credentials) |
+| `AUTH_GITHUB_ID` | From [GitHub Developer Settings](https://github.com/settings/developers) |
+| `AUTH_GITHUB_SECRET` | From [GitHub Developer Settings](https://github.com/settings/developers) |
+| `SMTP_HOST` | SMTP server host (e.g., `smtp.gmail.com`) |
+| `SMTP_PORT` | SMTP server port (e.g., `587`) |
+| `SMTP_USER` | SMTP email address |
+| `SMTP_PASSWORD` | SMTP app-specific password |
+| `EMAIL_FROM` | Sender email address |
+| `ORIGIN` | App URL (default: `http://localhost:5173`) |
+| `GEMINI_API_KEY` | From [Google AI Studio](https://aistudio.google.com/apikey) |
+
+## Available Scripts
+
+| Script | Description |
+|---|---|
+| `pnpm dev` | Start development server |
+| `pnpm build` | Build for production |
+| `pnpm preview` | Preview production build |
+| `pnpm check` | Run svelte-check |
+| `pnpm db:start` | Start PostgreSQL Docker container |
+| `pnpm db:stop` | Stop PostgreSQL Docker container |
+| `pnpm db:push` | Push Drizzle schema to database |
+| `pnpm db:studio` | Open Drizzle Studio (DB GUI) |
 
 ## Project Structure
 
 ```
 src/
 ├── lib/
-│   ├── auth.ts                   # Auth.js configuration
+│   ├── auth.ts                   # Auth.js configuration (with role in session)
 │   ├── index.ts                  # Lib barrel export
-│   ├── assets/
-│   │   └── favicon.svg           # App favicon
 │   ├── components/
+│   │   ├── ChatMessage.svelte    # Reusable chat message bubble
 │   │   ├── Logo.svelte           # Reusable SVG shield logo (AuthKit branding)
-│   │   ├── Navbar.svelte         # Navigation bar
+│   │   ├── Navbar.svelte         # Navigation bar (with admin/chat links)
 │   │   └── OAuthButtons.svelte   # Google & GitHub sign-in buttons
 │   └── server/
 │       ├── email.ts              # Email sending utility (SMTP)
 │       ├── token.ts              # Secure token generation
 │       └── db/
 │           ├── index.ts          # Drizzle client
-│           └── schema.ts         # Database schema
+│           └── schema.ts         # Database schema (users, accounts, sessions, tokens, chat)
 ├── routes/
 │   ├── +layout.svelte            # Root layout with Navbar
 │   ├── +layout.server.ts         # Session loader
@@ -107,42 +121,38 @@ src/
 │   ├── register/                 # Registration page
 │   ├── dashboard/                # Protected dashboard
 │   ├── profile/                  # Protected profile page
+│   ├── admin/                    # Admin dashboard (role-gated)
+│   ├── chat/                     # AI Chat interface
+│   ├── api/chat/                 # Gemini AI streaming endpoint
 │   └── auth/
 │       ├── forgot-password/      # Forgot password page
 │       ├── reset-password/       # Reset password page
 │       └── verify-email/         # Email verification
-│           ├── check-email/      # "Check your email" prompt
-│           └── resend/           # Resend verification email
 ├── hooks.server.ts               # Auth.js request handler
 ├── app.css                       # TailwindCSS + custom animations
 ├── app.d.ts                      # TypeScript declarations
 └── app.html                      # HTML template
 
-schema.sql                        # Raw SQL schema for assignment submission
 drizzle.config.ts                 # Drizzle ORM configuration
 ```
 
 ## Database Schema
 
-The database schema is defined in `src/lib/server/db/schema.ts` using Drizzle ORM and consists of 4 tables:
+Defined in `src/lib/server/db/schema.ts` using Drizzle ORM:
 
 | Table | Purpose |
 |---|---|
-| `users` | User accounts (id, name, email, hashed password, email verification status) |
+| `users` | User accounts (id, name, email, hashed password, role, disabled status) |
 | `accounts` | OAuth provider links (Google, GitHub) tied to users |
 | `sessions` | Active session tokens with expiry |
 | `verification_tokens` | Tokens for email verification and password reset |
+| `chats` | Chat conversations per user (title, timestamps) |
+| `chat_messages` | Chat messages in tree structure (role, content, parentId for branching) |
 
-A raw SQL version is available in `schema.sql` at the project root. The schema is applied to PostgreSQL using:
-```sh
-npx drizzle-kit push
-```
+## Troubleshooting
 
-## Available Scripts
-
-- `npm run dev` - Start development server
-- `npm run build` - Build for production
-- `npm run preview` - Preview production build
-- `npm run check` - Run svelte-check
-- `npx drizzle-kit push` - Push schema changes to database
-- `npx drizzle-kit studio` - Open Drizzle Studio (DB GUI)
+- **Port 5432 already in use**: Stop any existing PostgreSQL service, or run `pnpm db:stop` then `pnpm db:start`
+- **Docker not running**: Make sure Docker Desktop is open and running before `pnpm db:start`
+- **Schema push fails**: Ensure the database container is running (`docker ps`) and `DATABASE_URL` in `.env` is correct
+- **OAuth not working**: Verify your Google/GitHub OAuth credentials and that redirect URIs are set to `http://localhost:5173/auth/callback/google` and `http://localhost:5173/auth/callback/github`
+- **AI Chat not working**: Ensure `GEMINI_API_KEY` is set in your `.env` file

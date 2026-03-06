@@ -8,30 +8,18 @@ import {
 	ORIGIN
 } from '$env/static/private';
 
-const isDevMode =
-	!SMTP_USER || SMTP_USER === 'your-email@gmail.com' || !SMTP_PASSWORD || SMTP_PASSWORD === 'your-app-specific-password';
-
-const transporter = isDevMode
-	? null
-	: nodemailer.createTransport({
-			host: SMTP_HOST,
-			port: Number(SMTP_PORT),
-			auth: {
-				user: SMTP_USER,
-				pass: SMTP_PASSWORD
-			}
-		});
+const transporter = nodemailer.createTransport({
+	host: SMTP_HOST,
+	port: Number(SMTP_PORT),
+	secure: false,
+	auth: {
+		user: SMTP_USER,
+		pass: SMTP_PASSWORD
+	}
+});
 
 export async function sendVerificationEmail(email: string, token: string) {
 	const url = `${ORIGIN}/auth/verify-email?token=${token}&email=${encodeURIComponent(email)}`;
-
-	if (isDevMode || !transporter) {
-		console.log('\n========== VERIFICATION EMAIL ==========');
-		console.log(`To: ${email}`);
-		console.log(`Link: ${url}`);
-		console.log('=========================================\n');
-		return;
-	}
 
 	await transporter.sendMail({
 		from: EMAIL_FROM,
@@ -49,14 +37,6 @@ export async function sendVerificationEmail(email: string, token: string) {
 
 export async function sendPasswordResetEmail(email: string, token: string) {
 	const url = `${ORIGIN}/auth/reset-password?token=${token}&email=${encodeURIComponent(email)}`;
-
-	if (isDevMode || !transporter) {
-		console.log('\n========== PASSWORD RESET EMAIL ==========');
-		console.log(`To: ${email}`);
-		console.log(`Link: ${url}`);
-		console.log('==========================================\n');
-		return;
-	}
 
 	await transporter.sendMail({
 		from: EMAIL_FROM,
