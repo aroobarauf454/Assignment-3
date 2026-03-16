@@ -10,9 +10,9 @@
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-		"db:start": "docker run --name sveltekit-postgres -e POSTGRES_PASSWORD=1234 -e POSTGRES_DB=sveltekit_auth -p 5432:5432 -d postgres:16 || docker start sveltekit-postgres",
-		"db:stop": "docker stop sveltekit-postgres",
-		"db:push": "drizzle-kit push",
+		"db:start": "docker-compose up -d db",
+		"db:stop": "docker-compose down",
+		"db:migrate": "drizzle-kit push && npx tsx src/lib/server/db/migrate.ts",
 		"db:studio": "drizzle-kit studio"
 	},
 	"devDependencies": {
@@ -26,6 +26,7 @@
 		"svelte": "^5.51.0",
 		"svelte-check": "^4.3.6",
 		"tailwindcss": "^4.2.1",
+		"tsx": "^4.21.0",
 		"typescript": "^5.9.3",
 		"vite": "^7.3.1"
 	},
@@ -38,8 +39,10 @@
 		"ai": "^6.0.116",
 		"bcryptjs": "^3.0.3",
 		"drizzle-orm": "^0.45.1",
+		"highlight.js": "^11.11.1",
 		"marked": "^17.0.4",
 		"nodemailer": "^7.0.13",
-		"postgres": "^3.4.8"
+		"postgres": "^3.4.8",
+		"unpdf": "^1.4.0"
 	}
 }
