@@ -1,5 +1,7 @@
 # SvelteKit Auth App (AuthKit)
 
+[![CI](https://github.com/aroobarauf454/Assignment-3/actions/workflows/ci.yml/badge.svg)](https://github.com/aroobarauf454/Assignment-3/actions/workflows/ci.yml)
+
 A full-stack authentication application built with SvelteKit (Svelte 5), Auth.js, TailwindCSS, PostgreSQL with pgvector, Drizzle ORM, and an AI Chat interface powered by Google Gemini with RAG (Retrieval-Augmented Generation).
 
 ## Features
