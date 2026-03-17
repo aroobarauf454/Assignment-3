@@ -10,11 +10,22 @@
 	let newChats: Array<{ id: string; title: string; createdAt: Date }> = $state([]);
 	let allChats = $derived([...newChats, ...data.chats]);
 
+	type Citation = {
+		documentId: string;
+		chunkId: string;
+		filename: string;
+		chunkIndex: number;
+		similarity: number;
+		preview: string;
+	};
+
 	type TreeMessage = {
 		id: string;
 		parentId: string | null;
 		role: string;
 		content: string;
+		citations?: Citation[];
+		timestamp?: Date;
 	};
 
 	type PathMessage = TreeMessage & {
@@ -26,10 +37,22 @@
 	let chatId: string | null = $state(null);
 	let input = $state('');
 	let isLoading = $state(false);
+	let streamingMessageId: string | null = $state(null);
 	let error = $state('');
 	let chatContainer: HTMLDivElement | undefined = $state();
 	let sidebarOpen = $state(false);
 	let selectedBranches: Record<string, number> = $state({});
+	let searchQuery = $state('');
+	let uploading = $state(false);
+	let uploadSuccess = $state('');
+	let fileInput: HTMLInputElement | undefined = $state();
+	let attachedFiles: Array<{ id: string; filename: string; totalChunks: number; fileSize?: number }> = $state([]);
+
+	let filteredChats = $derived(
+		searchQuery.trim()
+			? allChats.filter((c) => c.title.toLowerCase().includes(searchQuery.toLowerCase()))
+			: allChats
+	);
 
 	function buildActivePath(messages: TreeMessage[], branches: Record<string, number>): PathMessage[] {
 		if (messages.length === 0) return [];
@@ -72,7 +95,9 @@
 			id: m.id,
 			parentId: m.parentId ?? null,
 			role: m.role,
-			content: m.content
+			content: m.content,
+			citations: m.citations ? (typeof m.citations === 'string' ? JSON.parse(m.citations) : m.citations) : undefined,
+			timestamp: m.createdAt ? new Date(m.createdAt) : undefined
 		}));
 		chatId = data.activeChatId;
 		selectedBranches = {};
@@ -95,6 +120,7 @@
 		chatId = null;
 		error = '';
 		selectedBranches = {};
+		attachedFiles = [];
 		goto('/chat');
 	}
 
@@ -132,6 +158,11 @@
 			const newChatId = response.headers.get('X-Chat-Id');
 			userMsgId = response.headers.get('X-User-Message-Id');
 			assistantMsgId = response.headers.get('X-Assistant-Message-Id');
+			const citationsHeader = response.headers.get('X-Citations');
+			let citations: Citation[] = [];
+			try {
+				if (citationsHeader) citations = JSON.parse(atob(citationsHeader));
+			} catch {}
 
 			if (newChatId && newChatId !== chatId) {
 				chatId = newChatId;
@@ -141,25 +172,38 @@
 				];
 			}
 
+			const now = new Date();
 			// Add messages to local tree
 			allMessages = [
 				...allMessages,
-				{ id: userMsgId!, parentId, role: 'user', content: lastUserMsg },
-				{ id: assistantMsgId!, parentId: userMsgId!, role: 'assistant', content: '' }
+				{ id: userMsgId!, parentId, role: 'user', content: lastUserMsg, timestamp: now },
+				{ id: assistantMsgId!, parentId: userMsgId!, role: 'assistant', content: '', citations, timestamp: now }
 			];
+
+			streamingMessageId = assistantMsgId;
 
 			const reader = response.body?.getReader();
 			if (!reader) throw new Error('No response body');
 			const decoder = new TextDecoder();
 			let assistantContent = '';
 
-			while (true) {
-				const { done, value } = await reader.read();
-				if (done) break;
-				assistantContent += decoder.decode(value, { stream: true });
-				allMessages = allMessages.map((m) =>
-					m.id === assistantMsgId ? { ...m, content: assistantContent } : m
-				);
+			try {
+				while (true) {
+					const { done, value } = await reader.read();
+					if (done) break;
+					assistantContent += decoder.decode(value, { stream: true });
+					allMessages = allMessages.map((m) =>
+						m.id === assistantMsgId ? { ...m, content: assistantContent } : m
+					);
+				}
+			} catch (streamErr) {
+				console.error('Stream reading error:', streamErr);
+			}
+
+			// Handle empty response (e.g. API quota exceeded, stream errored silently)
+			if (!assistantContent.trim()) {
+				error = 'Failed to get a response from the AI. The API quota may be exceeded — please try again later.';
+				allMessages = allMessages.filter((m) => m.id !== assistantMsgId);
 			}
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'An unexpected error occurred';
@@ -168,12 +212,12 @@
 			}
 		} finally {
 			isLoading = false;
+			streamingMessageId = null;
 		}
 	}
 
 	async function handleFork(index: number, newContent: string) {
 		const parentId = index > 0 ? activePath[index - 1].id : null;
-		// Clear branch selection at fork point so it defaults to the new branch
 		const key = parentId ?? '__root__';
 		const newBranches = { ...selectedBranches };
 		delete newBranches[key];
@@ -186,12 +230,87 @@
 		await sendToApi(messagesToSend, parentId);
 	}
 
+	async function handleRegenerate() {
+		if (isLoading || activePath.length < 2) return;
+
+		// Find the last user message in the path
+		const lastAssistantIdx = activePath.length - 1;
+		const lastUserIdx = lastAssistantIdx - 1;
+
+		if (activePath[lastAssistantIdx].role !== 'assistant' || activePath[lastUserIdx].role !== 'user') return;
+
+		// Remove the last assistant message from allMessages so regeneration creates a new branch
+		const lastAssistantId = activePath[lastAssistantIdx].id;
+		allMessages = allMessages.filter((m) => m.id !== lastAssistantId);
+
+		// Get the parent of the user message (to fork from)
+		const userMsg = activePath[lastUserIdx];
+		const parentId = userMsg.parentId;
+
+		// Rebuild the message history excluding the last pair
+		const messagesToSend = activePath.slice(0, lastAssistantIdx + 1).map((m) => ({ role: m.role, content: m.content }));
+
+		// Clear branch at user message's parent so new branch is selected
+		const key = parentId ?? '__root__';
+		const newBranches = { ...selectedBranches };
+		delete newBranches[key];
+		// Also clear branch at user message id so the new assistant response is picked
+		delete newBranches[userMsg.id];
+		selectedBranches = newBranches;
+
+		await sendToApi(messagesToSend, parentId);
+	}
+
+	async function handleFileUpload(e: Event) {
+		const target = e.target as HTMLInputElement;
+		const file = target.files?.[0];
+		if (!file) return;
+		const fileSize = file.size;
+		target.value = '';
+
+		uploading = true;
+		uploadSuccess = '';
+		error = '';
+
+		const formData = new FormData();
+		formData.append('file', file);
+
+		try {
+			const res = await fetch('/api/documents', { method: 'POST', body: formData });
+			const data = await res.json();
+			if (!res.ok) throw new Error(data.error);
+			attachedFiles = [...attachedFiles, {
+				id: data.documentId,
+				filename: data.filename,
+				totalChunks: data.totalChunks,
+				fileSize
+			}];
+			uploadSuccess = `"${data.filename}" uploaded. The AI can now answer questions about it.`;
+			setTimeout(() => (uploadSuccess = ''), 5000);
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Upload failed';
+		} finally {
+			uploading = false;
+		}
+	}
+
+	function removeAttachedFile(id: string) {
+		attachedFiles = attachedFiles.filter((f) => f.id !== id);
+	}
+
+	function formatFileSize(bytes: number): string {
+		if (bytes < 1024) return bytes + ' B';
+		if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+		return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+	}
+
 	async function handleSubmit(e: Event) {
 		e.preventDefault();
 		if (!input.trim() || isLoading) return;
 
 		const userMessage = input.trim();
 		input = '';
+		attachedFiles = [];
 		error = '';
 
 		const parentId = activePath.length > 0 ? activePath[activePath.length - 1].id : null;
@@ -216,11 +335,26 @@
 					+ New Chat
 				</button>
 			</div>
+			<!-- Search -->
+			<div class="border-b border-gray-100 px-3 py-2">
+				<div class="relative">
+					<svg class="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+					</svg>
+					<input
+						bind:value={searchQuery}
+						placeholder="Search chats..."
+						class="w-full rounded-lg border border-gray-200 bg-gray-50 py-1.5 pl-8 pr-3 text-xs text-gray-700 placeholder-gray-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+					/>
+				</div>
+			</div>
 			<div class="flex-1 overflow-y-auto p-2">
-				{#if allChats.length === 0}
-					<p class="px-3 py-6 text-center text-xs text-gray-400">No chats yet</p>
+				{#if filteredChats.length === 0}
+					<p class="px-3 py-6 text-center text-xs text-gray-400">
+						{searchQuery.trim() ? 'No matching chats' : 'No chats yet'}
+					</p>
 				{:else}
-					{#each allChats as chat (chat.id)}
+					{#each filteredChats as chat (chat.id)}
 						<div class="group flex items-center gap-1">
 							<a
 								href="/chat?id={chat.id}"
@@ -245,6 +379,7 @@
 									type="submit"
 									class="rounded p-1 text-gray-300 opacity-0 transition hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
 									title="Delete chat"
+									aria-label="Delete chat"
 								>
 									<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -329,6 +464,9 @@
 			<div
 				bind:this={chatContainer}
 				class="flex-1 space-y-4 overflow-y-auto px-4 py-4 md:px-8"
+				role="log"
+				aria-live="polite"
+				aria-label="Chat messages"
 			>
 				{#if activePath.length === 0}
 					<div class="flex h-full items-center justify-center">
@@ -348,7 +486,11 @@
 							<ChatMessage
 								role={message.role}
 								content={message.content}
+								citations={message.citations}
+								timestamp={message.timestamp}
+								isStreaming={message.id === streamingMessageId}
 								onEdit={message.role === 'user' && !isLoading ? (newContent) => handleFork(i, newContent) : undefined}
+								onRegenerate={message.role === 'assistant' && i === activePath.length - 1 && !isLoading ? handleRegenerate : undefined}
 								siblingCount={message.siblingCount}
 								siblingIndex={message.siblingIndex}
 								onBranchChange={message.siblingCount > 1 ? (newIndex) => switchBranch(message.parentId, newIndex) : undefined}
@@ -376,29 +518,107 @@
 				</div>
 			{/if}
 
+			<!-- Upload success -->
+			{#if uploadSuccess}
+				<div in:fly={{ y: 10, duration: 200 }} class="mx-4 mb-2 flex items-center gap-2 rounded-lg bg-green-50 px-4 py-2.5 text-sm text-green-700 md:mx-8">
+					<svg class="h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+					</svg>
+					{uploadSuccess}
+				</div>
+			{/if}
+
 			<!-- Input -->
 			<div class="border-t border-gray-100 bg-gray-50/50 px-4 py-4 md:px-8">
-				<form onsubmit={handleSubmit} class="flex gap-3">
-					<input
-						bind:value={input}
-						placeholder="Type your message..."
-						disabled={isLoading}
-						class="flex-1 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
-					/>
-					<button
-						type="submit"
-						disabled={isLoading || !input.trim()}
-						class="rounded-xl bg-indigo-600 px-6 py-3 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-50 disabled:hover:bg-indigo-600"
-					>
+				<form onsubmit={handleSubmit}>
+					<div class="rounded-xl border border-gray-200 bg-white shadow-sm transition focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20">
+						<!-- Attached files inside input bar -->
+						{#if attachedFiles.length > 0}
+							<div class="flex flex-wrap gap-2 px-3 pt-3">
+								{#each attachedFiles as file (file.id)}
+									<div
+										in:fly={{ y: 8, duration: 200 }}
+										class="flex items-center gap-2.5 rounded-lg bg-gray-100 px-3 py-2"
+									>
+										<div class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-red-500 text-white">
+											<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+											</svg>
+										</div>
+										<div class="min-w-0">
+											<p class="truncate text-sm font-medium text-gray-800">{file.filename}</p>
+											<p class="text-[11px] text-gray-400">
+												{file.filename.split('.').pop()?.toUpperCase()}{file.fileSize ? ' · ' + formatFileSize(file.fileSize) : ''}
+											</p>
+										</div>
+										<button
+											type="button"
+											onclick={() => removeAttachedFile(file.id)}
+											class="ml-1 flex-shrink-0 rounded-full bg-gray-300 p-0.5 text-white transition hover:bg-gray-400"
+											title="Remove"
+											aria-label="Remove file"
+										>
+											<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="3">
+												<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+											</svg>
+										</button>
+									</div>
+								{/each}
+							</div>
+						{/if}
+						<!-- Input row -->
+						<div class="flex items-center gap-2 px-2 py-2">
+							<!-- File upload button -->
+							<input
+								bind:this={fileInput}
+								type="file"
+								accept=".txt,.md,.csv,.json,.pdf"
+								class="hidden"
+								onchange={handleFileUpload}
+							/>
+							<button
+								type="button"
+								onclick={() => fileInput?.click()}
+								disabled={uploading || isLoading}
+								class="flex-shrink-0 rounded-lg p-2 text-gray-400 transition hover:bg-gray-100 hover:text-indigo-600 disabled:opacity-50"
+								title="Upload document for AI context"
+								aria-label="Upload document"
+							>
+								{#if uploading}
+									<svg class="h-5 w-5 animate-spin" fill="none" viewBox="0 0 24 24">
+										<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+										<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+									</svg>
+								{:else}
+									<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+									</svg>
+								{/if}
+							</button>
+							<input
+								bind:value={input}
+								placeholder="Type your message..."
+								disabled={isLoading}
+								class="flex-1 border-0 bg-transparent px-2 py-1.5 text-sm focus:outline-none disabled:opacity-50"
+							/>
+							<button
+								type="submit"
+								disabled={isLoading || !input.trim()}
+								class="flex-shrink-0 rounded-lg bg-indigo-600 p-2 text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-50 disabled:hover:bg-indigo-600"
+							>
 						{#if isLoading}
 							<svg class="h-5 w-5 animate-spin" fill="none" viewBox="0 0 24 24">
 								<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 								<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
 							</svg>
 						{:else}
-							Send
+							<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14m-4-4l4 4-4 4" />
+							</svg>
 						{/if}
 					</button>
+						</div>
+					</div>
 				</form>
 			</div>
 		</div>

@@ -3,10 +3,27 @@ import {
 	text,
 	timestamp,
 	integer,
-	primaryKey
+	primaryKey,
+	customType,
+	index
 } from 'drizzle-orm/pg-core';
 import type { AdapterAccountType } from '@auth/core/adapters';
 import type { InferSelectModel } from 'drizzle-orm';
+
+const vector = customType<{ data: number[]; driverParam: string }>({
+	dataType() {
+		return 'vector(384)';
+	},
+	toDriver(value: number[]): string {
+		return `[${value.join(',')}]`;
+	},
+	fromDriver(value: unknown): number[] {
+		return String(value)
+			.slice(1, -1)
+			.split(',')
+			.map(Number);
+	}
+});
 
 export const users = pgTable('users', {
 	id: text('id')
@@ -83,7 +100,44 @@ export const chatMessages = pgTable('chat_messages', {
 	parentId: text('parent_id'),
 	role: text('role').notNull(),
 	content: text('content').notNull(),
+	citations: text('citations'),
 	createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow()
 });
 
+// --- RAG Tables ---
+
+export const documents = pgTable('documents', {
+	id: text('id')
+		.primaryKey()
+		.$defaultFn(() => crypto.randomUUID()),
+	userId: text('user_id')
+		.notNull()
+		.references(() => users.id, { onDelete: 'cascade' }),
+	filename: text('filename').notNull(),
+	fileType: text('file_type').notNull().default('text'),
+	fileSize: integer('file_size'),
+	totalChunks: integer('total_chunks').default(0),
+	createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow()
+});
+
+export const chunks = pgTable(
+	'chunks',
+	{
+		id: text('id')
+			.primaryKey()
+			.$defaultFn(() => crypto.randomUUID()),
+		documentId: text('document_id')
+			.notNull()
+			.references(() => documents.id, { onDelete: 'cascade' }),
+		content: text('content').notNull(),
+		chunkIndex: integer('chunk_index').notNull(),
+		metadata: text('metadata'),
+		embedding: vector('embedding'),
+		createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow()
+	},
+	() => []
+);
+
 export type User = InferSelectModel<typeof users>;
+export type Document = InferSelectModel<typeof documents>;
+export type Chunk = InferSelectModel<typeof chunks>;

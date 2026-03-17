@@ -16,7 +16,7 @@ export const load: PageServerLoad = async (event) => {
 		.where(eq(chats.userId, session.user.id))
 		.orderBy(desc(chats.createdAt));
 
-	let allMessages: { id: string; parentId: string | null; role: string; content: string }[] = [];
+	let allMessages: { id: string; parentId: string | null; role: string; content: string; citations: string | null; createdAt: Date }[] = [];
 	let activeChatId: string | null = chatId;
 
 	if (chatId) {
@@ -25,7 +25,9 @@ export const load: PageServerLoad = async (event) => {
 				id: chatMessages.id,
 				parentId: chatMessages.parentId,
 				role: chatMessages.role,
-				content: chatMessages.content
+				content: chatMessages.content,
+				citations: chatMessages.citations,
+				createdAt: chatMessages.createdAt
 			})
 			.from(chatMessages)
 			.where(eq(chatMessages.chatId, chatId))
