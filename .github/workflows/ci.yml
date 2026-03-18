@@ -11,6 +11,19 @@ jobs:
     name: Lint & Type Check
     runs-on: ubuntu-latest
 
+    env:
+      AUTH_SECRET: ci-placeholder
+      AUTH_TRUST_HOST: "true"
+      GEMINI_API_KEY: ci-placeholder
+      DATABASE_URL: postgresql://postgres:1234@localhost:5432/sveltekit_auth
+      EMBEDDING_API_URL: http://localhost:8000
+      SMTP_HOST: smtp.example.com
+      SMTP_PORT: "587"
+      SMTP_USER: ci@example.com
+      SMTP_PASSWORD: ci-placeholder
+      EMAIL_FROM: ci@example.com
+      ORIGIN: http://localhost:5173
+
     steps:
       - uses: actions/checkout@v4
 
@@ -31,9 +44,3 @@ jobs:
 
       - name: Build
         run: pnpm build
-        env:
-          AUTH_SECRET: ci-placeholder
-          AUTH_TRUST_HOST: true
-          GEMINI_API_KEY: ci-placeholder
-          DATABASE_URL: postgresql://postgres:1234@localhost:5432/sveltekit_auth
-          EMBEDDING_API_URL: http://localhost:8000
