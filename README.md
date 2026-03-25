@@ -202,5 +202,3 @@ Defined in `src/lib/server/db/schema.ts` using Drizzle ORM with pgvector:
 - **AI Chat not working**: Ensure `GEMINI_API_KEY` is set in your `.env` file
 - **Embedding service not starting**: Check `docker logs sveltekit-embed-api` — the model download can take a moment on first run
 - **SMTP password with spaces**: Quote it in `.env`: `SMTP_PASSWORD="rgyj ylpz iekw ntnt"`
-#   A r o o b a - r a u f - A s s i g n m e n t - 3  
- 
